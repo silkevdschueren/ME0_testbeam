@@ -414,7 +414,7 @@ def plot_meaneff_spilltime(branches, sigmanum = 3, N = 100, xmax = 2000, makefit
         myoutput = fit_exponential(timestamps, efficiencies, xerrors, yerrors, 
                                    guess=[np.max(efficiencies), 0, 0])
         ax.plot(np.linspace(0, np.max(timestamps), 100), exponential(myoutput.beta, np.linspace(0, np.max(timestamps), 100)),
-               label=f'{myoutput.beta[0]:.2f} * exp(-{myoutput.beta[1]:.2e})t + {myoutput.beta[2]:.2f}')
+               label=f'{myoutput.beta[0]:.2f} * exp(-{myoutput.beta[1]:.2e})t + {myoutput.beta[2]:.2e}')
     
     plt.legend()
     plt.show()
