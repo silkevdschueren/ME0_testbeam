@@ -29,7 +29,7 @@ def read_runfile(runnumber, downloaded=False, printbranches=False):
     if not downloaded:
         file = uproot.open(f'/eos/cms/store/group/upgrade/GEM/TestBeams/July2022/tracks/00000{runnumber}.root')
     else:
-        file = uproot.open(f'00000{runnumber}.root')
+        file = uproot.open(f'rootfiles/00000{runnumber}.root')
         
     tree = file['trackTree']
     branches = tree.arrays()#entry_stop=100000
@@ -199,7 +199,6 @@ def fit_gaussian(runnumber, branches, residuals_x, valid_props, chi2_mask, show=
     if show:
         plt.show()
     plt.close()
-    
     
     return xres_mean, xres_sigma, xres_mean_std, xres_sigma_std
 
@@ -411,10 +410,11 @@ def plot_meaneff_spilltime(branches, sigmanum = 3, N = 100, xmax = 2000, makefit
     ax.set(xlabel="Time (ns)", ylabel="Efficiency (%)", title=f"Efficiency of the ME0 at {sigmanum} sigma", ylim=(0.8, 1))
     
     if makefit:
+        offset = 0.8
         myoutput = fit_exponential(timestamps, efficiencies, xerrors, yerrors, 
-                                   guess=[np.max(efficiencies), 0, 0])
+                                   guess=[np.max(efficiencies)-offset, 0, offset])
         ax.plot(np.linspace(0, np.max(timestamps), 100), exponential(myoutput.beta, np.linspace(0, np.max(timestamps), 100)),
-               label=f'{myoutput.beta[0]:.2f} * exp(-{myoutput.beta[1]:.2e})t + {myoutput.beta[2]:.2e}')
+               label=fr'({myoutput.beta[0]:.2f})$\pm$({myoutput.sd_beta[0]:.2f}) * exp(-({myoutput.beta[1]:.2e})$\pm$({myoutput.sd_beta[1]:.2e}))t + ({myoutput.beta[2]:.2e})$\pm$({myoutput.sd_beta[2]:.2e})')
     
     plt.legend()
     plt.show()
@@ -487,11 +487,11 @@ def add_efficiency(file, sigmanum=1.5):
 
         except FileNotFoundError:
             file = remove_run(file, runnumber)
-            print(f"File for run {runnumber} not found.")
-
+            #print(f"File for run {runnumber} not found.")
+            
         except RuntimeError:
             file = remove_run(file, runnumber)
-            print(f"Optimal parameters for run {runnumber} not found")
+            #print(f"Optimal parameters for run {runnumber} not found")
 
         #except NameError:
             #remove_run(runnumbers.index(runnumber))
@@ -525,7 +525,7 @@ def read_rateatt(filename):
 
 
 
-def add_attenuation(file, att_rate_file):
+def add_rate(file, att_rate_file):
     """
     Add columns with the rate of the source and error on the rate of the source to the pandas dataframe.
     
@@ -816,3 +816,91 @@ def calc_rotation_yoffset(branches, show=False):
     plt.close()
    
     return np.arctan(myoutput.beta[0]), myoutput.beta[1]
+
+
+
+def plot_occupancy(runnumber, branches):
+    """
+    Make a plot of the occupancy of the strips and the distribution of a given event.
+
+    :param runnumber: The number of the run for which to determine the occupancy plot and distribution
+    :param branches: The branches of the given event.
+    :return: /
+    """
+
+    plotnum = len(np.unique(ak.flatten(branches['rechitEta'])))
+    fig, ax = plt.subplots(plotnum, 2, figsize=(15, 10))
+
+    # Run over all etapartitions in the chamber and create etamask.
+    for counter, etapartition in enumerate(np.unique(ak.flatten(branches['rechitEta']))):
+        eta_mask = branches['rechitEta'] == etapartition
+
+        if len(ak.flatten(branches['rechitDigiStrip'][eta_mask])) > 0:
+            # Create histogram of data in order to extract number of hits per strip.
+            minbin = np.min(branches['rechitDigiStrip'][eta_mask])
+            maxbin = np.max(branches['rechitDigiStrip'][eta_mask])
+            bins = np.arange(minbin-0.5, maxbin+1.5, 1)  # Edges of the bins.
+            bincenters = np.arange(minbin, maxbin+1, 1)  # Centers of the bins, so the values.
+
+            data_hits, _, __ = ax[counter, 0].hist(ak.flatten(branches['rechitDigiStrip'][eta_mask]), 
+                                        bins=bins)
+            ax[counter, 0].set(xlabel='Strip', ylabel='Hits', title=f'etapartition {etapartition}')
+
+            minbin = 0
+            maxbin = np.max(data_hits)
+            bins = np.arange(minbin-0.5, maxbin+1.5, (maxbin - minbin) / 50)  # Edges of the bins.
+
+            # Make histogram of distribution of number of hits.
+            ax[counter, 1].hist(data_hits, bins=bins)
+
+            ax[counter, 1].set(xlabel='Hits per strip', ylabel='Occurence')
+    fig.suptitle(f"Occupancy distribution run {runnumber}", fontsize=20)
+    plt.tight_layout()
+    plt.show()
+
+    return
+
+
+
+def calc_occupancies(file, atten='2.2'):
+    """
+    Determine the occupancy plots and occupancy distributions for all files with a given attenuation.
+    
+    :param file: Pandas dataframe with information about the runs.
+    :param atten: Given attenuation for which we want the occupancy distributions.
+    :return: /
+    """
+    
+    for counter, runnumber in enumerate(run):
+        try:
+             if attenuation[counter] == atten:
+                branches = read_runfile(runnumber)                
+                plot_occupancy(runnumber, branches)
+
+        except FileNotFoundError:
+            print(f"File for run {runnumber} not found.")
+
+    return
+
+
+
+def calc_occupancies(file, attenuation='2.2'):
+    """
+    Determine the occupancy plots and occupancy distributions for all files with a given attenuation.
+    
+    :param file: Pandas dataframe with information about the runs.
+    :param attenuation: Given attenuation for which we want the occupancy distributions.
+    :return: /
+    """
+    
+    for index, run in file.iterrows():
+        try:
+             if run['attenuation'] == attenuation:
+                runnumber = run["Run"]
+                branches = read_runfile(runnumber)                
+                plot_occupancy(runnumber, branches)
+
+        except FileNotFoundError:
+            print(f"File for run {runnumber} not found.")
+
+    return
