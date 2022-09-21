@@ -680,7 +680,7 @@ def add_rotation(file, show=False, downloaded=False):
             # Calculate needed information.
             runnumber = run["Run"]
             branches = read_runfile(runnumber, downloaded)
-            rotation, yoffset = calc_rotation_yoffset(branches, show)
+            rotation, yoffset = calc_rotation_yoffset(branches, runnumber, show)
             rotations.append(rotation)
             yoffsets.append(yoffset)
 
@@ -744,12 +744,12 @@ def fit_line(x, y, xerrors=None, yerrors=None):
 
 
 
-def calc_rotation_yoffset(branches, show=False):
+def calc_rotation_yoffset(branches, runnumber, show=False):
     """
     Calculate the rotation of the detector and the offset in y direction from the propagated hits of a given event.
     
-    :param prop_x: Propagated hit positions in x direction.
-    :param prop_y: Propagated hit positions in y direction.
+    :param branches: Branches of the event.
+    :param runnumber: Runnumber, only used for title of the plot.
     :return: The rotation of the detector in radians and the offset in the y direction.
     """
     
@@ -823,7 +823,7 @@ def calc_rotation_yoffset(branches, show=False):
     if show:
         print(f"The tilt of the line is {np.arctan(myoutput.beta[0]):.5f} radians")
         print(f"The offset of the line is {myoutput.beta[1]:.5f}mm")
-        ax.set(xlabel="Prop x", ylabel="Prop y", title="Rotation of the detector")
+        ax.set(xlabel="Prop x", ylabel="Prop y", title=f"Rotation of the detector for run {runnumber}")
         fig.colorbar(h[3], label="Number of hits")
         plt.show()
 
