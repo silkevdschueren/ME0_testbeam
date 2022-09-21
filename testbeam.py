@@ -365,7 +365,7 @@ def plot_meaneff_spilltime(branches, sigmanum = 3, N = 100, xmax = 2000, makefit
     """
 
     # Make figure to plot the data.
-    fig = plt.figure(figsize=(25, 7))
+    fig = plt.figure(figsize=(20, 5))
     ax = fig.add_subplot(111)
     
     # Empty lists to save data to plot.
@@ -406,8 +406,8 @@ def plot_meaneff_spilltime(branches, sigmanum = 3, N = 100, xmax = 2000, makefit
         # Errors in y direction (https://lss.fnal.gov/archive/test-tm/2000/fermilab-tm-2286-cd.pdf).
         yerrors.append((1/N)*np.sqrt(k*(1 - k/N)))
         
-    ax.errorbar(timestamps, efficiencies, xerr=xerrors, yerr=yerrors, ls='', capsize=3)
-    ax.set(xlabel="Time (ns)", ylabel="Efficiency (%)", title=f"Efficiency of the ME0 at {sigmanum} sigma", ylim=(0.8, 1))
+    ax.errorbar(timestamps, efficiencies, xerr=xerrors, yerr=yerrors, ls='', capsize=2)
+    ax.set(xlabel="Time (ns)", ylabel="Efficiency (%)", title=f"Efficiency of the ME0 at {sigmanum} sigma", ylim=(0.9, 1))
     
     if makefit:
         offset = 0.8
@@ -416,7 +416,7 @@ def plot_meaneff_spilltime(branches, sigmanum = 3, N = 100, xmax = 2000, makefit
         ax.plot(np.linspace(0, np.max(timestamps), 100), exponential(myoutput.beta, np.linspace(0, np.max(timestamps), 100)),
                label=fr'({myoutput.beta[0]:.2f})$\pm$({myoutput.sd_beta[0]:.2f}) * exp(-({myoutput.beta[1]:.2e})$\pm$({myoutput.sd_beta[1]:.2e}))t + ({myoutput.beta[2]:.2e})$\pm$({myoutput.sd_beta[2]:.2e})')
     
-    plt.legend()
+    #plt.legend()
     plt.show()
     
     return
@@ -458,12 +458,13 @@ def remove_run(file, runnumber):
 
 
 
-def add_efficiency(file, sigmanum=1.5):
+def add_efficiency(file, sigmanum=1.5, downloaded=False):
     """
     Calculate the efficiency of all runs taken.
     
     :param file: Pandas dataframe with information about the runs.
     :param sigmanum: Optional parameter giving which tracks are considered to be proper reconstructed.
+    :param downloaded: Optional parameter indicating if the runfiles are downloaded.
     :return: file: Pandas dataframe with information about the runs with efficiency and errors added.
     """
     
@@ -477,7 +478,7 @@ def add_efficiency(file, sigmanum=1.5):
         try:
             # Calculate needed information.
             runnumber = run["Run"]
-            branches = read_runfile(runnumber)
+            branches = read_runfile(runnumber, downloaded)
             prop_x, prop_y, rec_x, rec_y, residuals_x, residuals_y, valid_props, valid_recs, chi2_mask = calc_residuals(branches)
             efficiency, error = calc_efficiency(runnumber, sigmanum, branches, residuals_x, valid_recs, valid_props, chi2_mask)
 
@@ -587,46 +588,57 @@ def fit_exponential(xvalues, yvalues, xerrors=None, yerrors=None, guess=None):
 
 
 
-def mean_chi2(branches):
+def mean_chi2(branches, runnumber=None, show=False):
     """
     Determine the mean chi2 value of the given event, taking into account a cut on the chi2 distribution.
     
     :param branches: Branches of the event.
-    :return: Mean value of the chi2 of the tracks in the event.
+    :param runnumber: Number of the run to calculate chi2.
+    :param show: Parameter indicating if all plots have to be shown. Default False.
+    :return: Mean value of the chi2 of the tracks in the event, and the standard deviation on this estimate.
     """
 
-    chi2_x_cut = 5
+    chi2_x_cut = 10
     chi2_x_mask1 = branches['trackChi2X'] > 0
     chi2_x_mask2 = branches['trackChi2X'] < chi2_x_cut
-    chi2_y_cut = 5
+    chi2_y_cut = 10
     chi2_y_mask1 = branches['trackChi2Y'] > 0
     chi2_y_mask2 = branches['trackChi2Y'] < chi2_y_cut
 
-    chi2_mask = chi2_x_mask1 & chi2_y_mask1 & chi2_x_mask2 & chi2_y_mask2
+    chi2_mask = chi2_x_mask1 & chi2_x_mask2 #& chi2_y_mask1 & chi2_y_mask2
+    
+    chi2dist = branches['trackChi2X'][chi2_mask]
+    
+    plt.hist(chi2dist, bins=np.linspace(0, 10, 50))
+    plt.title(f"chi2x distribution run {runnumber}")
+    plt.show()
+    
+    return np.mean(chi2dist), np.std(chi2dist)
 
-    return np.mean(np.sqrt(branches['trackChi2X'][chi2_mask]**2 + branches['trackChi2Y'][chi2_mask])**2)
 
 
-
-def add_chi2(file):
+def add_chi2(file, show=False, downloaded=False):
     """
     Calculate the mean chi2 of all runs taken.
     
     :param file: Pandas dataframe with information about the runs.
+    :param show: Parameter indicating if all plots have to be shown. Default False.
+    :param downloaded: Optional parameter indicating if the runfiles are downloaded.
     :return: Pandas dataframe with information about the runs with mean chi2 added.
     """
     
     # Remove run 381 since this file is broken and does not fall in exceptions.
     file = remove_run(file, '381')
-    chi2s = []
+    chi2s, stds = [], []
 
     for index, run in file.iterrows():
         try:
             # Calculate needed information.
             runnumber = run["Run"]
-            branches = read_runfile(runnumber)
-            chi2 = mean_chi2(branches)
+            branches = read_runfile(runnumber, downloaded)
+            chi2, error = mean_chi2(branches, runnumber, show)
             chi2s.append(chi2)
+            stds.append(error)
 
         except FileNotFoundError:
             file = remove_run(file, runnumber)
@@ -642,17 +654,19 @@ def add_chi2(file):
             #print(f"No keys for run {runnumber}.")
 
     file = file.assign(mean_chi2 = chi2s)
+    file = file.assign(std_chi2 = stds)
 
     return file
 
 
 
-def add_rotation(file, show=False):
+def add_rotation(file, show=False, downloaded=False):
     """
     Add the rotation of all runs taken to the pandas dataframe
     
     :param file: Pandas dataframe with information about the runs.
     :param show: Parameter indicating if all plots have to be shown. Default False.
+    :param downloaded: Optional parameter indicating if the runfiles are downloaded.
     :return: Pandas dataframe with information about the runs with rotation in radians added.
     """
     
@@ -665,7 +679,7 @@ def add_rotation(file, show=False):
         try:
             # Calculate needed information.
             runnumber = run["Run"]
-            branches = read_runfile(runnumber)
+            branches = read_runfile(runnumber, downloaded)
             rotation, yoffset = calc_rotation_yoffset(branches, show)
             rotations.append(rotation)
             yoffsets.append(yoffset)
@@ -703,7 +717,7 @@ def linear(B, x):
 
 
 
-def fit_line(x, y, xerrors, yerrors):
+def fit_line(x, y, xerrors=None, yerrors=None):
     """
     Fit a line through the given points, taking into account both x and y errors.
     
@@ -862,34 +876,13 @@ def plot_occupancy(runnumber, branches):
 
 
 
-def calc_occupancies(file, atten='2.2'):
-    """
-    Determine the occupancy plots and occupancy distributions for all files with a given attenuation.
-    
-    :param file: Pandas dataframe with information about the runs.
-    :param atten: Given attenuation for which we want the occupancy distributions.
-    :return: /
-    """
-    
-    for counter, runnumber in enumerate(run):
-        try:
-             if attenuation[counter] == atten:
-                branches = read_runfile(runnumber)                
-                plot_occupancy(runnumber, branches)
-
-        except FileNotFoundError:
-            print(f"File for run {runnumber} not found.")
-
-    return
-
-
-
-def calc_occupancies(file, attenuation='2.2'):
+def calc_occupancies(file, attenuation='2.2', downloaded=False):
     """
     Determine the occupancy plots and occupancy distributions for all files with a given attenuation.
     
     :param file: Pandas dataframe with information about the runs.
     :param attenuation: Given attenuation for which we want the occupancy distributions.
+    :param downloaded: Optional parameter indicating if the runfiles are downloaded.
     :return: /
     """
     
@@ -897,7 +890,7 @@ def calc_occupancies(file, attenuation='2.2'):
         try:
              if run['attenuation'] == attenuation:
                 runnumber = run["Run"]
-                branches = read_runfile(runnumber)                
+                branches = read_runfile(runnumber, downloaded)                
                 plot_occupancy(runnumber, branches)
 
         except FileNotFoundError:
